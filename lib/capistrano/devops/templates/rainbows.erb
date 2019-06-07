@@ -1,0 +1,39 @@
+working_directory "<%= current_path %>"
+pid "<%= fetch(:rainbows_pid) %>"
+stderr_path "<%= fetch(:rainbows_log) %>"
+stdout_path "<%= fetch(:rainbows_log) %>"
+
+listen "/tmp/rainbows.<%= fetch(:application) %>.sock"
+worker_processes <%= fetch(:rainbows_workers) %>
+timeout <%= fetch(:rainbows_timeout) %>
+
+Rainbows! do
+  worker_connections 400
+  keepalive_timeout 0
+  use :EventMachine
+  client_max_body_size <%= fetch(:rainbows_max_body_size) %>
+end
+
+preload_app true
+
+before_fork do |server, worker|
+  # Disconnect since the database connection will not carry over
+  defined?(ActiveRecord::Base) and
+    ActiveRecord::Base.connection.disconnect!
+
+  # Quit the old unicorn process
+  old_pid = "<%= current_path %>" + '/tmp/pids/rainbows.pid.oldbin'
+  if File.exists?(old_pid) && server.pid != old_pid
+    begin
+      Process.kill("QUIT", File.read(old_pid).to_i)
+    rescue Errno::ENOENT, Errno::ESRCH
+      # someone else did our job for us
+    end
+  end
+end
+
+after_fork do |server, worker|
+  # Start up the database connection again in the worker
+  defined?(ActiveRecord::Base) and
+    ActiveRecord::Base.establish_connection
+end
